@@ -17,7 +17,6 @@ const LOG_CHANNEL_ID = "1558482103622967476";
 const app = express();
 app.use(express.json());
 
-// Roblox kód kérése
 app.post('/api/generate-code', (req, res) => {
     if (req.headers['x-api-key'] !== process.env.ROBLOX_SECRET_KEY) return res.status(401).send();
     const { robloxUserId, robloxUsername } = req.body;
@@ -26,7 +25,6 @@ app.post('/api/generate-code', (req, res) => {
     res.json({ code, expiresIn: 300 });
 });
 
-// Roblox ellenőrzése (hogy eltűnjön a GUI)
 app.get('/api/check-link/:robloxUserId', (req, res) => {
     const robloxUserId = String(req.params.robloxUserId);
     const linked = Array.from(linkedAccounts.values()).includes(robloxUserId);
@@ -35,13 +33,12 @@ app.get('/api/check-link/:robloxUserId', (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 
-// --- DISCORD BOT ---
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'link_button') {
-        const modal = new ModalBuilder().setCustomId('link_modal').setTitle('Roblox összekötés');
-        const input = new TextInputBuilder().setCustomId('link_code').setLabel('Kód:').setStyle(TextInputStyle.Short).setMinLength(6).setMaxLength(6).setRequired(true);
+        const modal = new ModalBuilder().setCustomId('link_modal').setTitle('Fiók összekötés');
+        const input = new TextInputBuilder().setCustomId('link_code').setLabel('Kód').setStyle(TextInputStyle.Short).setMinLength(6).setMaxLength(6).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         await interaction.showModal(modal);
     }
@@ -50,45 +47,36 @@ client.on('interactionCreate', async (interaction) => {
         const enteredCode = interaction.fields.getTextInputValue('link_code').trim().toUpperCase();
         const data = pendingCodes.get(enteredCode);
 
-        if (!data) return interaction.reply({ content: 'Érvénytelen vagy lejárt kód!', ephemeral: true });
+        if (!data) return interaction.reply({ content: 'Hiba: Érvénytelen kód!', ephemeral: true });
 
         linkedAccounts.set(interaction.user.id, data.robloxUserId);
         pendingCodes.delete(enteredCode);
 
         await interaction.reply({ content: 'Sikeres összekötés!', ephemeral: true });
 
-        // LOG KÜLDÉSE (EMOJI NÉLKÜL)
+        // --- EMOTIKON MENTES LOG ---
         try {
             const channel = await client.channels.fetch(LOG_CHANNEL_ID);
             if (channel) {
                 const log = new EmbedBuilder()
-                    .setTitle('Új fiók összekapcsolás')
+                    .setTitle('Fiók összekapcsolás') // Nincs emoji
                     .addFields(
-                        { name: 'Roblox Név', value: `\`${data.robloxUsername}\``, inline: true },
-                        { name: 'Roblox ID', value: `\`${data.robloxUserId}\``, inline: true },
-                        { name: 'Discord', value: `${interaction.user.tag} (${interaction.user})` },
-                        { name: 'Időpont', value: new Date().toLocaleString('hu-HU') }
+                        { name: 'Roblox név', value: `${data.robloxUsername}`, inline: true }, // Nincs emoji
+                        { name: 'Roblox ID', value: `${data.robloxUserId}`, inline: true }, // Nincs emoji
+                        { name: 'Discord felhasználó', value: `${interaction.user.tag} (${interaction.user.id})` },
+                        { name: 'Dátum', value: new Date().toLocaleString('hu-HU') } // Nincs emoji
                     )
-                    .setColor(0x2ECC71);
+                    .setColor(0x000000); // Fekete színű csík a log mellett
                 await channel.send({ embeds: [log] });
             }
-        } catch (e) { console.log("Log hiba: " + e); }
+        } catch (e) { console.log(e); }
     }
 });
 
-// PANEL PARANCS (!panel)
 client.on('messageCreate', async (m) => {
     if (m.content === '!panel' && !m.author.bot) {
-        const embed = new EmbedBuilder()
-            .setTitle('Fiók Összekötés')
-            .setDescription('Kattints az alábbi gombra a fiókjaid összekapcsolásához!')
-            .setColor(0x5865F2);
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('link_button')
-                .setLabel('Fiókok összekötése')
-                .setStyle(ButtonStyle.Primary)
-        );
+        const embed = new EmbedBuilder().setTitle('Fiók összekötés').setDescription('Kattints a gombra az összekapcsoláshoz.').setColor(0x000000);
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('link_button').setLabel('Összekötés').setStyle(ButtonStyle.Secondary));
         await m.channel.send({ embeds: [embed], components: [row] });
     }
 });
