@@ -11,121 +11,62 @@ const {
 const pendingCodes = new Map();
 const linkedAccounts = new Map();
 
+const LOG_CHANNEL_ID = "1558482103622967476"; // A te általad megadott csatorna ID
+
 // ─── 1. API Szerver ─────────────────────────────
 const app = express();
 app.use(express.json());
 
 app.post('/api/generate-code', (req, res) => {
     if (req.headers['x-api-key'] !== process.env.ROBLOX_SECRET_KEY) {
-        console.log('❌ Hibás titkos kulcs a Roblox felől!');
         return res.status(401).json({ error: 'Hibás titkos kulcs!' });
     }
 
-    const { robloxUserId } = req.body;
-    if (!robloxUserId) return res.status(400).json({ error: 'Hiányzó robloxUserId' });
+    const { robloxUserId, robloxUsername } = req.body;
+    if (!robloxUserId) return res.status(400).json({ error: 'Hiányzó adatok' });
 
     const code = crypto.randomBytes(3).toString('hex').toUpperCase();
 
     pendingCodes.set(code, {
         robloxUserId: String(robloxUserId),
+        robloxUsername: robloxUsername || "Ismeretlen",
         createdAt: Date.now()
     });
 
-    console.log(`[KÓD GENERÁLVA] Roblox ID: ${robloxUserId} -> Kód: ${code}`);
+    console.log(`[KÓD] ${robloxUsername} -> ${code}`);
     res.json({ code, expiresIn: 300 });
 });
 
-app.listen(process.env.PORT, () => {
-    console.log(`🚀 API Szerver fut a ${process.env.PORT}-es porton.`);
+app.get('/api/check-link/:robloxUserId', (req, res) => {
+    const robloxUserId = String(req.params.robloxUserId);
+    for (const [discordId, rId] of linkedAccounts.entries()) {
+        if (rId === robloxUserId) return res.json({ linked: true });
+    }
+    res.json({ linked: false });
 });
+
+app.listen(process.env.PORT || 3000, () => console.log(`🚀 Szerver fut.`));
 
 // ─── 2. Discord Bot ─────────────────────────────
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ]
+    intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent]
 });
 
-function getPanelData() {
-    const embed = new EmbedBuilder()
-        .setTitle('🔗 Roblox – Discord Fiókösszekötés')
-        .setDescription(
-            '**Hogyan kösd össze a fiókodat?**\n\n' +
-            '1️⃣ Lépj be a Roblox játékba.\n' +
-            '2️⃣ Jegyezd meg a képernyőn látható **6 jegyű kódot**.\n' +
-            '3️⃣ Kattints az alábbi gombra, és írd be ide!\n\n' +
-            '⏱ *A kód 5 percig érvényes.*'
-        )
-        .setColor(0x5865F2);
+client.on('ready', () => console.log(`✅ Bot online: ${client.user.tag}`));
 
-    const row = new ActionRowBuilder().addComponents(
-        new ButtonBuilder()
-            .setCustomId('link_button')
-            .setLabel('Fiókok összekötése')
-            .setStyle(ButtonStyle.Primary)
-            .setEmoji('🔗')
-    );
-
-    return { embeds: [embed], components: [row] };
-}
-
-client.on('ready', async () => {
-    console.log(`✅ Discord Bot bejelentkezve: ${client.user.tag}`);
-
-    // Automatikus keresés induláskor
-    for (const [, guild] of client.guilds.cache) {
-        console.log(`🔍 Keresés a szerveren: ${guild.name}...`);
-        
-        // Megkeressük az összekötés csatornát
-        const targetChannel = guild.channels.cache.find(
-            ch => (ch.name.includes('összekötés') || ch.name.includes('osszekotes') || ch.name.includes('link')) && ch.type === ChannelType.GuildText
-        );
-
-        if (targetChannel) {
-            try {
-                await targetChannel.send(getPanelData());
-                console.log(`🎉 SIKER! Üzenet kirakva a #${targetChannel.name} csatornába!`);
-            } catch (err) {
-                console.log(`❌ Nem sikerült üzenetet küldeni ide: #${targetChannel.name}. Jogosultság hiba: ${err.message}`);
-            }
-        } else {
-            console.log(`⚠️ Nem találtam 'összekötés' nevű csatornát a(z) ${guild.name} szerveren.`);
-            console.log(`👉 Írd be bármelyik csatornába a Discordon, hogy "!panel", és oda fogja kirakni!`);
-        }
-    }
-});
-
-// Parancs kézi kiküldéshez: !panel
-client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
-
-    if (message.content.trim() === '!panel') {
-        try {
-            await message.channel.send(getPanelData());
-            console.log(`📨 Panel sikeresen kiküldve kézzel a #${message.channel.name} csatornába!`);
-        } catch (err) {
-            console.log(`❌ Hiba a kézi küldésnél: ${err.message}`);
-        }
+// Kézi panel parancs
+client.on('messageCreate', async (m) => {
+    if (m.content === '!panel') {
+        const embed = new EmbedBuilder().setTitle('🔗 Fiók Összekötés').setDescription('Kattints a gombra az összekötéshez!').setColor(0x5865F2);
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('link_button').setLabel('Fiókok összekötése').setStyle(ButtonStyle.Primary).setEmoji('🔗'));
+        await m.channel.send({ embeds: [embed], components: [row] });
     }
 });
 
 client.on('interactionCreate', async (interaction) => {
     if (interaction.isButton() && interaction.customId === 'link_button') {
-        const modal = new ModalBuilder()
-            .setCustomId('link_modal')
-            .setTitle('Roblox összekötés');
-
-        const input = new TextInputBuilder()
-            .setCustomId('link_code')
-            .setLabel('Roblox játékban kapott kód:')
-            .setStyle(TextInputStyle.Short)
-            .setPlaceholder('pl. 4F8A2D')
-            .setMaxLength(6)
-            .setMinLength(6)
-            .setRequired(true);
-
+        const modal = new ModalBuilder().setCustomId('link_modal').setTitle('Roblox összekötés');
+        const input = new TextInputBuilder().setCustomId('link_code').setLabel('Kód:').setStyle(TextInputStyle.Short).setMinLength(6).setMaxLength(6).setRequired(true);
         modal.addComponents(new ActionRowBuilder().addComponents(input));
         await interaction.showModal(modal);
     }
@@ -134,24 +75,35 @@ client.on('interactionCreate', async (interaction) => {
         const enteredCode = interaction.fields.getTextInputValue('link_code').trim().toUpperCase();
         const codeData = pendingCodes.get(enteredCode);
 
-        if (!codeData) {
-            return interaction.reply({ content: '❌ **Érvénytelen kód!** Lehet, hogy elgépelted?', flags: [64] });
-        }
-
-        if (Date.now() - codeData.createdAt > 5 * 60 * 1000) {
-            pendingCodes.delete(enteredCode);
-            return interaction.reply({ content: '⏰ **A kód lejárt!** Lépj be újra a játékba!', flags: [64] });
-        }
+        if (!codeData) return interaction.reply({ content: '❌ Érvénytelen kód!', ephemeral: true });
 
         pendingCodes.delete(enteredCode);
         linkedAccounts.set(interaction.user.id, codeData.robloxUserId);
 
-        console.log(`🎉 ÖSSZEKÖTVE! Discord: ${interaction.user.tag} <-> Roblox ID: ${codeData.robloxUserId}`);
+        // ✅ SIKERES VISSZAJELZÉS A JÁTÉKOSNAK
+        await interaction.reply({ content: '✅ Sikeresen összekötötted a fiókodat!', ephemeral: true });
 
-        return interaction.reply({
-            content: `✅ **Sikeres összekötés!**\nA Discord fiókod össze lett kapcsolva a Roblox fiókoddal (ID: \`${codeData.robloxUserId}\`).`,
-            flags: [64]
-        });
+        // 📝 LOG KÜLDÉSE A CSATORNÁBA
+        try {
+            const logChannel = await client.channels.fetch(LOG_CHANNEL_ID);
+            if (logChannel) {
+                const now = new Date().toLocaleString('hu-HU', { timeZone: 'Europe/Budapest' });
+                const logEmbed = new EmbedBuilder()
+                    .setTitle('📥 Új fiók összekapcsolás')
+                    .addFields(
+                        { name: '👤 Roblox Név', value: `\`${codeData.robloxUsername}\``, inline: true },
+                        { name: '🆔 Roblox ID', value: `\`${codeData.robloxUserId}\``, inline: true },
+                        { name: '🔵 Discord Név', value: `${interaction.user.tag} (${interaction.user})`, inline: false },
+                        { name: '⏰ Időpont', value: `\`${now}\``, inline: false }
+                    )
+                    .setColor(0x2ECC71) // Zöld szín
+                    .setTimestamp();
+
+                await logChannel.send({ embeds: [logEmbed] });
+            }
+        } catch (err) {
+            console.error("Hiba a log küldésekor:", err);
+        }
     }
 });
 
