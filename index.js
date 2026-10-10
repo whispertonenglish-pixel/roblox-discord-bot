@@ -50,24 +50,24 @@ client.on('interactionCreate', async (interaction) => {
         const enteredCode = interaction.fields.getTextInputValue('link_code').trim().toUpperCase();
         const data = pendingCodes.get(enteredCode);
 
-        if (!data) return interaction.reply({ content: '❌ Érvénytelen vagy lejárt kód!', ephemeral: true });
+        if (!data) return interaction.reply({ content: 'Érvénytelen vagy lejárt kód!', ephemeral: true });
 
         linkedAccounts.set(interaction.user.id, data.robloxUserId);
         pendingCodes.delete(enteredCode);
 
-        await interaction.reply({ content: '✅ Sikeres összekötés!', ephemeral: true });
+        await interaction.reply({ content: 'Sikeres összekötés!', ephemeral: true });
 
-        // LOG KÜLDÉSE
+        // LOG KÜLDÉSE (EMOJI NÉLKÜL)
         try {
             const channel = await client.channels.fetch(LOG_CHANNEL_ID);
             if (channel) {
                 const log = new EmbedBuilder()
-                    .setTitle('📥 Új fiók összekapcsolás')
+                    .setTitle('Új fiók összekapcsolás')
                     .addFields(
-                        { name: '👤 Roblox Név', value: `\`${data.robloxUsername}\``, inline: true },
-                        { name: '🆔 Roblox ID', value: `\`${data.robloxUserId}\``, inline: true },
-                        { name: '🔵 Discord', value: `${interaction.user.tag} (${interaction.user})` },
-                        { name: '⏰ Időpont', value: new Date().toLocaleString('hu-HU') }
+                        { name: 'Roblox Név', value: `\`${data.robloxUsername}\``, inline: true },
+                        { name: 'Roblox ID', value: `\`${data.robloxUserId}\``, inline: true },
+                        { name: 'Discord', value: `${interaction.user.tag} (${interaction.user})` },
+                        { name: 'Időpont', value: new Date().toLocaleString('hu-HU') }
                     )
                     .setColor(0x2ECC71);
                 await channel.send({ embeds: [log] });
@@ -76,10 +76,19 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
+// PANEL PARANCS (!panel)
 client.on('messageCreate', async (m) => {
     if (m.content === '!panel' && !m.author.bot) {
-        const embed = new EmbedBuilder().setTitle('🔗 Fiók Összekötés').setDescription('Kattints a gombra!').setColor(0x5865F2);
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('link_button').setLabel('Fiókok összekötése').setStyle(ButtonStyle.Primary));
+        const embed = new EmbedBuilder()
+            .setTitle('Fiók Összekötés')
+            .setDescription('Kattints az alábbi gombra a fiókjaid összekapcsolásához!')
+            .setColor(0x5865F2);
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('link_button')
+                .setLabel('Fiókok összekötése')
+                .setStyle(ButtonStyle.Primary)
+        );
         await m.channel.send({ embeds: [embed], components: [row] });
     }
 });
