@@ -47,14 +47,14 @@ client.on('interactionCreate', async (interaction) => {
         const enteredCode = interaction.fields.getTextInputValue('link_code').trim().toUpperCase();
         const data = pendingCodes.get(enteredCode);
 
-        if (!data) return interaction.reply({ content: 'Hiba: Érvénytelen kód!', ephemeral: true });
+        if (!data) return interaction.reply({ content: 'Hiba: Ervenytelen kod!', ephemeral: true });
 
         linkedAccounts.set(interaction.user.id, data.robloxUserId);
         pendingCodes.delete(enteredCode);
 
-        await interaction.reply({ content: 'Sikeres összekötés!', ephemeral: true });
+        await interaction.reply({ content: 'Sikeres osszekotes!', ephemeral: true });
 
-        // LOG KÜLDÉSE
+        // LOG KÜLDÉSE (EMOJI NÉLKÜL)
         try {
             const channel = await client.channels.fetch(LOG_CHANNEL_ID);
             if (channel) {
@@ -73,7 +73,7 @@ client.on('interactionCreate', async (interaction) => {
     }
 });
 
-// PANEL PARANCS (!panel) A KÉRT EGYEDI SZÖVEGGEL
+// A FRISSÍTETT PANEL PARANCS
 client.on('messageCreate', async (m) => {
     if (m.content === '!panel' && !m.author.bot) {
         const embed = new EmbedBuilder()
