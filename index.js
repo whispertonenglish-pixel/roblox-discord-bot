@@ -54,29 +54,43 @@ client.on('interactionCreate', async (interaction) => {
 
         await interaction.reply({ content: 'Sikeres összekötés!', ephemeral: true });
 
-        // --- EMOTIKON MENTES LOG ---
+        // LOG KÜLDÉSE
         try {
             const channel = await client.channels.fetch(LOG_CHANNEL_ID);
             if (channel) {
                 const log = new EmbedBuilder()
-                    .setTitle('Fiók összekapcsolás') // Nincs emoji
+                    .setTitle('Fiók összekapcsolás')
                     .addFields(
-                        { name: 'Roblox név', value: `${data.robloxUsername}`, inline: true }, // Nincs emoji
-                        { name: 'Roblox ID', value: `${data.robloxUserId}`, inline: true }, // Nincs emoji
+                        { name: 'Roblox név', value: `${data.robloxUsername}`, inline: true },
+                        { name: 'Roblox ID', value: `${data.robloxUserId}`, inline: true },
                         { name: 'Discord felhasználó', value: `${interaction.user.tag} (${interaction.user.id})` },
-                        { name: 'Dátum', value: new Date().toLocaleString('hu-HU') } // Nincs emoji
+                        { name: 'Dátum', value: new Date().toLocaleString('hu-HU') }
                     )
-                    .setColor(0x000000); // Fekete színű csík a log mellett
+                    .setColor(0x000000);
                 await channel.send({ embeds: [log] });
             }
         } catch (e) { console.log(e); }
     }
 });
 
+// PANEL PARANCS (!panel) A KÉRT EGYEDI SZÖVEGGEL
 client.on('messageCreate', async (m) => {
     if (m.content === '!panel' && !m.author.bot) {
-        const embed = new EmbedBuilder().setTitle('Fiók összekötés').setDescription('Kattints a gombra az összekapcsoláshoz.').setColor(0x000000);
-        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('link_button').setLabel('Összekötés').setStyle(ButtonStyle.Secondary));
+        const embed = new EmbedBuilder()
+            .setTitle('Fiók összekötés')
+            .setDescription(
+                "A Roblox-fiókok összekötésének elsődleges célja a biztonság növelése, a gyanús tevékenységek felismerése és a közösség védelme. A rendszer segítségével bizonyos, a fiókhoz kapcsolódó információkat tudunk ellenőrizni és elemezni annak érdekében, hogy időben felismerhessük a potenciális veszélyeket.\n\n" +
+                "A megfelelően kialakított ellenőrzési rendszer segíthet a gyanús fióktevékenységek, a jogosulatlan hozzáférési kísérletek, a csalások és az egyéb rosszindulatú műveletek kiszűrésében. Az összegyűjtött, engedélyezetten hozzáférhető információk alapján könnyebben azonosíthatók azok a minták, amelyek potenciális biztonsági kockázatra utalhatnak."
+            )
+            .setColor(0x000000);
+
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder()
+                .setCustomId('link_button')
+                .setLabel('Összekötés')
+                .setStyle(ButtonStyle.Secondary)
+        );
+
         await m.channel.send({ embeds: [embed], components: [row] });
     }
 });
