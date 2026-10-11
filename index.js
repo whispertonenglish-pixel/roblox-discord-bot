@@ -17,14 +17,34 @@ const LOG_CHANNEL_ID = "1558482103622967476";
 const app = express();
 app.use(express.json());
 
+// Roblox kód kérése (MINDIG TÖRLI A RÉGI KAPCSOLATOT, HOGY ÚJRA KELLEJEN KÖTNI!)
 app.post('/api/generate-code', (req, res) => {
     if (req.headers['x-api-key'] !== process.env.ROBLOX_SECRET_KEY) return res.status(401).send();
     const { robloxUserId, robloxUsername } = req.body;
+    const rIdStr = String(robloxUserId);
+
+    // 1. Töröljük a korábbi összekötést ehhez a Roblox fiókhoz
+    for (const [dId, rId] of linkedAccounts.entries()) {
+        if (rId === rIdStr) {
+            linkedAccounts.delete(dId);
+        }
+    }
+
+    // 2. Töröljük a korábbi függőben lévő kódokat is
+    for (const [c, data] of pendingCodes.entries()) {
+        if (data.robloxUserId === rIdStr) {
+            pendingCodes.delete(c);
+        }
+    }
+
+    // 3. Új kód generálása
     const code = crypto.randomBytes(3).toString('hex').toUpperCase();
-    pendingCodes.set(code, { robloxUserId: String(robloxUserId), robloxUsername, createdAt: Date.now() });
+    pendingCodes.set(code, { robloxUserId: rIdStr, robloxUsername, createdAt: Date.now() });
+    
     res.json({ code, expiresIn: 300 });
 });
 
+// Roblox ellenőrzése (csak akkor ad true-t, ha AZ ADOTT BELÉPÉSBEN már beírta a kódot)
 app.get('/api/check-link/:robloxUserId', (req, res) => {
     const robloxUserId = String(req.params.robloxUserId);
     const linked = Array.from(linkedAccounts.values()).includes(robloxUserId);
@@ -33,6 +53,7 @@ app.get('/api/check-link/:robloxUserId', (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 
+// --- DISCORD BOT ---
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
 client.on('interactionCreate', async (interaction) => {
@@ -52,7 +73,6 @@ client.on('interactionCreate', async (interaction) => {
         linkedAccounts.set(interaction.user.id, data.robloxUserId);
         pendingCodes.delete(enteredCode);
 
-        // --- A KÉRT MÓDOSÍTOTT SIKER ÜZENET ---
         await interaction.reply({ content: 'Sikeresen összekötötted a Roblox fiókodat!', ephemeral: true });
 
         // LOG KÜLDÉSE A CSATORNÁBA
