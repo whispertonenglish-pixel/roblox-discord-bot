@@ -1,59 +1,40 @@
 require('dotenv').config();
 const express = require('express');
 const crypto = require('crypto');
-const {
-    Client, GatewayIntentBits,
-    ActionRowBuilder, ButtonBuilder, ButtonStyle,
-    ModalBuilder, TextInputBuilder, TextInputStyle,
-    EmbedBuilder
-} = require('discord.js');
-
-const pendingCodes = new Map();
-const linkedAccounts = new Map();
-
-// --- KONFIGURÁCIÓ ---
-const LOG_CHANNEL_ID = "1558482103622967476"; 
+const { Client, GatewayIntentBits, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, EmbedBuilder } = require('discord.js');
 
 const app = express();
 app.use(express.json());
 
-// Roblox kód kérése (MINDIG TÖRLI A RÉGI KAPCSOLATOT, HOGY ÚJRA KELLEJEN KÖTNI!)
+const pendingCodes = new Map();
+const sessionStatus = new Map(); // robloxUserId -> boolean (true ha EBBEN a körben összekötötték)
+const LOG_CHANNEL_ID = "1558482103622967476";
+
 app.post('/api/generate-code', (req, res) => {
     if (req.headers['x-api-key'] !== process.env.ROBLOX_SECRET_KEY) return res.status(401).send();
     const { robloxUserId, robloxUsername } = req.body;
-    const rIdStr = String(robloxUserId);
+    const rId = String(robloxUserId);
 
-    // 1. Töröljük a korábbi összekötést ehhez a Roblox fiókhoz
-    for (const [dId, rId] of linkedAccounts.entries()) {
-        if (rId === rIdStr) {
-            linkedAccounts.delete(dId);
-        }
-    }
-
-    // 2. Töröljük a korábbi függőben lévő kódokat is
+    // MINDEN BELÉPÉSNÉL TÖRLÜNK MINDEN ELŐZMÉNYT
+    sessionStatus.set(rId, false); 
     for (const [c, data] of pendingCodes.entries()) {
-        if (data.robloxUserId === rIdStr) {
-            pendingCodes.delete(c);
-        }
+        if (data.robloxUserId === rId) pendingCodes.delete(c);
     }
 
-    // 3. Új kód generálása
     const code = crypto.randomBytes(3).toString('hex').toUpperCase();
-    pendingCodes.set(code, { robloxUserId: rIdStr, robloxUsername, createdAt: Date.now() });
+    pendingCodes.set(code, { robloxUserId: rId, robloxUsername, createdAt: Date.now() });
     
-    res.json({ code, expiresIn: 300 });
+    console.log(`[ÚJ KÓD] ${robloxUsername} (${rId}) -> ${code}`);
+	res.json({ code, expiresIn: 300 });
 });
 
-// Roblox ellenőrzése (csak akkor ad true-t, ha AZ ADOTT BELÉPÉSBEN már beírta a kódot)
 app.get('/api/check-link/:robloxUserId', (req, res) => {
-    const robloxUserId = String(req.params.robloxUserId);
-    const linked = Array.from(linkedAccounts.values()).includes(robloxUserId);
-    res.json({ linked });
+    const rId = String(req.params.robloxUserId);
+    res.json({ linked: sessionStatus.get(rId) || false });
 });
 
 app.listen(process.env.PORT || 3000);
 
-// --- DISCORD BOT ---
 const client = new Client({ intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent] });
 
 client.on('interactionCreate', async (interaction) => {
@@ -70,12 +51,12 @@ client.on('interactionCreate', async (interaction) => {
 
         if (!data) return interaction.reply({ content: 'Hiba: Érvénytelen kód!', ephemeral: true });
 
-        linkedAccounts.set(interaction.user.id, data.robloxUserId);
+        // EBBEN A PILLANATBAN JELEZZÜK A SIKERT A ROBLOXNAK
+        sessionStatus.set(data.robloxUserId, true);
         pendingCodes.delete(enteredCode);
 
         await interaction.reply({ content: 'Sikeresen összekötötted a Roblox fiókodat!', ephemeral: true });
 
-        // LOG KÜLDÉSE A CSATORNÁBA
         try {
             const channel = await client.channels.fetch(LOG_CHANNEL_ID);
             if (channel) {
@@ -84,35 +65,20 @@ client.on('interactionCreate', async (interaction) => {
                     .addFields(
                         { name: 'Roblox név', value: `${data.robloxUsername}`, inline: true },
                         { name: 'Roblox ID', value: `${data.robloxUserId}`, inline: true },
-                        { name: 'Discord felhasználó', value: `${interaction.user.tag} (${interaction.user.id})` },
-                        { name: 'Dátum', value: new Date().toLocaleString('hu-HU') }
+                        { name: 'Discord', value: `${interaction.user.tag}` }
                     )
                     .setColor(0x000000);
                 await channel.send({ embeds: [log] });
             }
-        } catch (e) { console.log(e); }
+        } catch (e) {}
     }
 });
 
 client.on('messageCreate', async (m) => {
     if (m.content === '!panel' && !m.author.bot) {
-        const embed = new EmbedBuilder()
-            .setTitle('Fiók összekötés')
-            .setDescription(
-                "A Roblox-fiókok összekötésének elsődleges célja a biztonság növelése, a gyanús tevékenységek felismerése és a közösség védelme. A rendszer segítségével bizonyos, a fiókhoz kapcsolódó információkat tudunk ellenőrizni és elemezni annak érdekében, hogy időben felismerhessük a potenciális veszélyeket.\n\n" +
-                "A megfelelően kialakított ellenőrzési rendszer segíthet a gyanús fióktevékenységek, a jogosulatlan hozzáférési kísérletek, a csalások és az egyéb rosszindulatú műveletek kiszűrésében. Az összegyűjtött, engedélyezetten hozzáférhető információk alapján könnyebben azonosíthatók azok a minták, amelyek potenciális biztonsági kockázatra utalhatnak."
-            )
-            .setColor(0x000000);
-
-        const row = new ActionRowBuilder().addComponents(
-            new ButtonBuilder()
-                .setCustomId('link_button')
-                .setLabel('Összekötés')
-                .setStyle(ButtonStyle.Secondary)
-        );
-
+        const embed = new EmbedBuilder().setTitle('Fiók összekötés').setDescription("A Roblox-fiókok összekötésének célja a biztonság növelése.").setColor(0x000000);
+        const row = new ActionRowBuilder().addComponents(new ButtonBuilder().setCustomId('link_button').setLabel('Összekötés').setStyle(ButtonStyle.Secondary));
         await m.channel.send({ embeds: [embed], components: [row] });
     }
 });
-
 client.login(process.env.DISCORD_BOT_TOKEN);
